@@ -15,5 +15,6 @@ add_executable(meshTalk src/main.cpp
         include/core/interfaces.hpp
         include/network/socket.hpp
         include/network/tcp_connection.hpp
-        include/network/tcp_listener.hpp)
+        include/network/tcp_listener.hpp
+        include/core/memory_repository.hpp)
 target_include_directories(meshTalk PRIVATE include)
