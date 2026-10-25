@@ -10,6 +10,7 @@ FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download
 FetchContent_MakeAvailable(json)
 
 if(WIN32)
+    add_compile_definitions(WIN32_LEAN_AND_MEAN)
     link_libraries(ws2_32)
 endif()
 

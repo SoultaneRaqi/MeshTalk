@@ -1,6 +1,15 @@
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
+
 #include <iostream>
 #include <string>
 #include <thread>
+
 #include <memory>
 #include <vector>
 #include <mutex>
@@ -12,13 +21,6 @@
 #include "network/tcp_listener.hpp"
 #include "network/tcp_connection.hpp"
 #include "core/memory_repository.hpp"
-
-#ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-#else
-    #include <arpa/inet.h>
-#endif
 
 using json = nlohmann::json;
 
