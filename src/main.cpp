@@ -3,13 +3,14 @@
 #include <thread>
 #include <memory>
 #include <vector>
-
-#include <nlohmann/json.hpp> 
+#include <mutex>
+#include <nlohmann/json.hpp>
 
 #include "ui/chalk.hpp"
 #include "network/tcp_listener.hpp"
 #include "network/tcp_connection.hpp"
 #include "core/memory_repository.hpp"
+#include "network/udp_discovery.hpp"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -21,6 +22,7 @@
 using json = nlohmann::json;
 
 std::unique_ptr<ITransport> active_connection = nullptr;
+std::mutex connection_mutex; // Protects active_connection
 InMemoryMessageRepository repo;
 std::string my_name; // Store the user's chosen name
 
@@ -72,6 +74,25 @@ int main() {
     std::getline(std::cin, my_name);
     if (my_name.empty()) my_name = "Anonymous";
 
+    // Start Auto-Discovery
+    UdpDiscovery discovery(my_name, 47475, [](std::string ip, std::string peer_name) {
+        // Lock the mutex so we don't connect twice
+        std::lock_guard<std::mutex> lock(connection_mutex);
+
+        // If we aren't connected to anyone yet, auto-connect!
+        if (!active_connection) {
+            std::cout << "\033[2K\r"; // Clear line
+            std::cout << chalk::magenta << "Found " << peer_name << " on network! Auto-connecting...\n" << chalk::reset;
+            std::cout << "> " << std::flush;
+
+            auto conn = connect_to_peer(ip, 47475);
+            if (conn) {
+                conn->on_receive(handle_incoming_message);
+                active_connection = std::move(conn);
+            }
+        }
+    });
+
     std::cout << "Listening on port 47475...\n";
     std::cout << "Commands: /connect <ip> <port> | /history | /quit\n";
 
@@ -83,6 +104,10 @@ int main() {
                 if (new_conn) {
                     std::cout << chalk::green << "\n[Peer Connected!]\n> " << chalk::reset << std::flush;
                     new_conn->on_receive(handle_incoming_message);
+
+                    // --- LOCK ADDED HERE ---
+                    // Safely take ownership of the new incoming connection
+                    std::lock_guard<std::mutex> lock(connection_mutex);
                     active_connection = std::move(new_conn);
                 }
             }
@@ -120,6 +145,10 @@ int main() {
                 if (conn) {
                     std::cout << chalk::green << "Connected successfully!\n" << chalk::reset;
                     conn->on_receive(handle_incoming_message);
+
+                    // --- LOCK ADDED HERE ---
+                    // Safely take ownership of the manual connection
+                    std::lock_guard<std::mutex> lock(connection_mutex);
                     active_connection = std::move(conn);
                 } else {
                     std::cout << chalk::red << "Connection failed.\n" << chalk::reset;

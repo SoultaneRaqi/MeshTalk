@@ -19,7 +19,8 @@ add_executable(meshTalk
         include/core/interfaces.hpp
         include/network/socket.hpp
         include/network/tcp_connection.hpp
-        include/network/tcp_listener.hpp)
+        include/network/tcp_listener.hpp
+        include/network/udp_discovery.hpp)
 
 target_include_directories(meshTalk PRIVATE include)
 # Link the JSON library to your project
