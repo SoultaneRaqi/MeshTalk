@@ -4,6 +4,8 @@
 #include <memory>
 #include <vector>
 
+#include <nlohmann/json.hpp> 
+
 #include "ui/chalk.hpp"
 #include "network/tcp_listener.hpp"
 #include "network/tcp_connection.hpp"
@@ -16,11 +18,12 @@
     #include <arpa/inet.h>
 #endif
 
-// Global pointers to hold our active peer connection and message history
+using json = nlohmann::json;
+
 std::unique_ptr<ITransport> active_connection = nullptr;
 InMemoryMessageRepository repo;
+std::string my_name; // Store the user's chosen name
 
-// Helper function to act as the client and connect to another peer
 std::unique_ptr<ITransport> connect_to_peer(const std::string& ip, int port) {
     SocketHandle sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == INVALID_SOCKET) return nullptr;
@@ -33,8 +36,25 @@ std::unique_ptr<ITransport> connect_to_peer(const std::string& ip, int port) {
     if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         return nullptr;
     }
-
     return std::make_unique<TcpConnection>(sock);
+}
+
+// Reusable callback for handling incoming JSON strings
+void handle_incoming_message(const std::string& raw_msg) {
+    try {
+        // Parse the raw string back into a JSON object
+        json j = json::parse(raw_msg);
+        std::string sender = j.value("sender", "Unknown");
+        std::string body = j.value("body", "");
+
+        repo.save({sender, body});
+
+        std::cout << "\033[2K\r";
+        std::cout << chalk::yellow << "[" << sender << "]: " << body << chalk::reset << "\n";
+        std::cout << "> " << std::flush;
+    } catch (const json::parse_error& e) {
+        // If someone sends non-JSON text, ignore it so it doesn't crash the app
+    }
 }
 
 int main() {
@@ -46,10 +66,15 @@ int main() {
 #endif
 
     std::cout << chalk::cyan << "MeshTerm v0.1 Started\n" << chalk::reset;
+
+    // Prompt for display name
+    std::cout << "Enter your display name: ";
+    std::getline(std::cin, my_name);
+    if (my_name.empty()) my_name = "Anonymous";
+
     std::cout << "Listening on port 47475...\n";
     std::cout << "Commands: /connect <ip> <port> | /history | /quit\n";
 
-    // Run the listener in a background thread
     std::jthread listener_thread([]() {
         try {
             TcpListener listener(47475);
@@ -57,17 +82,7 @@ int main() {
                 auto new_conn = listener.accept_connection();
                 if (new_conn) {
                     std::cout << chalk::green << "\n[Peer Connected!]\n> " << chalk::reset << std::flush;
-
-                    // Register the callback for incoming messages
-                    new_conn->on_receive([](std::string msg) {
-                        repo.save({"Peer", msg}); // Save to memory
-
-                        // \033[2K clears the current line, \r resets cursor to the start
-                        std::cout << "\033[2K\r";
-                        std::cout << chalk::yellow << "[Peer]: " << msg << chalk::reset << "\n";
-                        std::cout << "> " << std::flush; // Redraw user prompt
-                    });
-
+                    new_conn->on_receive(handle_incoming_message);
                     active_connection = std::move(new_conn);
                 }
             }
@@ -76,7 +91,6 @@ int main() {
         }
     });
 
-    // The REPL (Read-Eval-Print Loop) on the main thread
     std::string input;
     while (true) {
         std::cout << "> ";
@@ -88,7 +102,6 @@ int main() {
             break;
         }
         else if (input == "/history") {
-            // Retrieve and display all saved messages
             std::cout << chalk::cyan << "--- Chat History ---\n" << chalk::reset;
             for (const auto& msg : repo.get_all()) {
                 std::cout << msg.sender << ": " << msg.body << "\n";
@@ -106,15 +119,7 @@ int main() {
                 auto conn = connect_to_peer(ip, port);
                 if (conn) {
                     std::cout << chalk::green << "Connected successfully!\n" << chalk::reset;
-
-                    conn->on_receive([](std::string msg) {
-                        repo.save({"Peer", msg}); // Save to memory
-
-                        std::cout << "\033[2K\r";
-                        std::cout << chalk::yellow << "[Peer]: " << msg << chalk::reset << "\n";
-                        std::cout << "> " << std::flush; // Redraw user prompt
-                    });
-
+                    conn->on_receive(handle_incoming_message);
                     active_connection = std::move(conn);
                 } else {
                     std::cout << chalk::red << "Connection failed.\n" << chalk::reset;
@@ -124,8 +129,13 @@ int main() {
             }
         }
         else if (active_connection) {
-            // Send message and save it to our own history
-            if (active_connection->send(input)) {
+            // Build the JSON object and convert it to a string (.dump()) before sending
+            json j = {
+                {"sender", my_name},
+                {"body", input}
+            };
+
+            if (active_connection->send(j.dump())) {
                 repo.save({"Me", input});
             }
         }
