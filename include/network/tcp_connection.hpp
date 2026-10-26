@@ -39,7 +39,10 @@ private:
 public:
     // Constructor initializes the unique_ptr and starts the jthread automatically
     TcpConnection(SocketHandle handle) : sock(std::make_unique<Socket>(handle)) {
-        read_thread = std::jthread(&TcpConnection::read_loop, this);
+        // FIX: Wrap the member function in a lambda so MSVC understands the stop_token
+        read_thread = std::jthread([this](std::stop_token stoken) {
+            read_loop(stoken);
+        });
     }
 
     // override keyword guarantees we correctly match the pure virtual function signature
